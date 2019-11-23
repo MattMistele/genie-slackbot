@@ -16,17 +16,33 @@ namespace genie_slackbot.Bots
 
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
-            AnswerOptions answer = (AnswerOptions)Enum.Parse(typeof(AnswerOptions), turnContext.Activity.Text);
-            var question = await client.Answer(answer);
-            if (client.GuessIsDue(question))
+            AnswerOptions answer = parseInput(turnContext.Activity.Text);
+            Activity reply;
+
+            if (answer != AnswerOptions.Unknown)
             {
-                var guess = await client.GetGuess();
-                await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"My guess is: {guess[0].Name} - {guess[0].Description}"), cancellationToken);
+                var nextQuestion = await client.Answer(answer);
+                if (client.GuessIsDue(nextQuestion))
+                {
+                    // If the genie thinks it knows the answer, tell it
+                    var guess = await client.GetGuess();
+                    reply = MessageFactory.Text($"My guess is: {guess[0].Name} - {guess[0].Description}");
+                    reply.Attachments = new List<Attachment> { CreateGuessCard(guess[0]) };
+                }
+                else
+                {
+                    // Otherwise, ask the next question
+                    reply = MessageFactory.Text($"Question {nextQuestion.Step + 1}: {nextQuestion.Text}");
+                    reply.SuggestedActions = getPossibleActions();
+                }
             }
             else
             {
-                AskQuestion(question, turnContext, cancellationToken);
+                reply = MessageFactory.Text(($"I didn't understand that. Please enter Yes (0), No (1), Don't Know (2), Probably (3), or Probably Not (4)"));
+                reply.SuggestedActions = getPossibleActions();
             }
+
+            await turnContext.SendActivityAsync(reply, cancellationToken);
         }
 
         protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
@@ -35,51 +51,60 @@ namespace genie_slackbot.Bots
             {
                 if (member.Id != turnContext.Activity.Recipient.Id)
                 {
-                    await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"The genie's out of the bottle. Think of any person (real or fictional), and I'll guess it."), cancellationToken);
+                    await turnContext.SendActivityAsync($"The genie's out of the bottle. Think of any person (real or fictional), and I'll guess it.");
 
                     // Start a new game and ask the first question
                     client = new AkinatorClient(Language.English, ServerType.Person);
                     var question = await client.StartNewGame();
-                    await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"Question {question.Step + 1}: {question.Text}"), cancellationToken);
+
+                    var reply = MessageFactory.Text($"Question {question.Step + 1}: {question.Text}");
+                    reply.SuggestedActions = getPossibleActions();
+                    await turnContext.SendActivityAsync(reply, cancellationToken);
                 }
             }
         }
 
-        private async void AskQuestion(AkinatorQuestion question, ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
+        private static Attachment CreateGuessCard(AkinatorGuess guess)
         {
-            var options = GetOptions();
-            string possible = "Possible answers: ";
-            foreach (var option in options)
+            var heroCard = new HeroCard
             {
-                possible += option.Key;
-                possible += ": ";
-                possible += option.Value;
-                possible += " ";
-            }
+                Title = guess.Name,
+                Subtitle = guess.Description,
+                Images = new List<CardImage> { new CardImage(guess.PhotoPath.ToString()) }
+            };
 
-            await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"Question {question.Step + 1}: {question.Text}"), cancellationToken);
-            await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak(possible), cancellationToken);
+            return heroCard.ToAttachment();
         }
 
-        public Dictionary<int, string> GetOptions()
+        private AnswerOptions parseInput(string input)
         {
-            var myDic = new Dictionary<int, string>();
-            foreach (AnswerOptions foo in Enum.GetValues(typeof(AnswerOptions)))
-            {
-                myDic.Add((int)foo, foo.ToString());
-            }
-
-            return myDic;
+            if (input == "Yes" || input == "0")
+                return AnswerOptions.Yes;
+            else if (input == "No" || input == "1")
+                return AnswerOptions.No;
+            else if (input == "Don't know" || input == "2")
+                return AnswerOptions.DontKnow;
+            else if (input == "Probably" || input == "3")
+                return AnswerOptions.Probably;
+            else if (input == "Probably Not" || input == "4")
+                return AnswerOptions.ProbablyNot;
+            else
+                return AnswerOptions.Unknown;
         }
 
-        private IActivity CreateActivityWithTextAndSpeak(string message)
+        private SuggestedActions getPossibleActions()
         {
-            var activity = MessageFactory.Text(message);
-            string speak = @"<speak version='1.0' xmlns='https://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
-              <voice name='Microsoft Server Speech Text to Speech Voice (en-US, JessaRUS)'>" +
-              $"{message}" + "</voice></speak>";
-            activity.Speak = speak;
-            return activity;
+            return new SuggestedActions()
+            {
+                Actions = new List<CardAction>()
+                {
+                    new CardAction() { Title = "Yes", Type = ActionTypes.ImBack, Value = "Yes" },
+                    new CardAction() { Title = "No", Type = ActionTypes.ImBack, Value = "No" },
+                    new CardAction() { Title = "Don't Know", Type = ActionTypes.ImBack, Value = "Don't know" },
+                    new CardAction() { Title = "Probably", Type = ActionTypes.ImBack, Value = "Probably" },
+                    new CardAction() { Title = "Probably Not", Type = ActionTypes.ImBack, Value = "Probably Not" },
+                },
+            };
         }
     }
 }
