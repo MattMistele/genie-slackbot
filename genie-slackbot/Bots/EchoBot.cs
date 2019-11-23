@@ -1,18 +1,18 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-//
-// Generated with Bot Builder V4 SDK Template for Visual Studio EchoBot v4.6.2
-
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Schema;
+using Akinator.Api.Net.Enumerations;
+using Akinator.Api.Net.Model;
+using Akinator.Api.Net;
 
 namespace genie_slackbot.Bots
 {
     public class EchoBot : ActivityHandler
     {
+        static IAkinatorClient client;
+
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
             await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"Echo: {turnContext.Activity.Text}"), cancellationToken);
@@ -24,7 +24,9 @@ namespace genie_slackbot.Bots
             {
                 if (member.Id != turnContext.Activity.Recipient.Id)
                 {
-                    await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"Hello and welcome!"), cancellationToken);
+                    client = new AkinatorClient(Language.English, ServerType.Person);
+
+                    await turnContext.SendActivityAsync(CreateActivityWithTextAndSpeak($"The genie's out of the bottle. Think of any person (real or fictional), and I'll guess it."), cancellationToken);
                 }
             }
         }
